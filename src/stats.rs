@@ -92,27 +92,25 @@ impl ChatStats {
                         stats.edited += 1;
                     }
 
-                    for entity in text_entities {
-                        *stats
-                            .text_entity_types
-                            .entry(entity.entity_type.clone())
-                            .or_insert(0) += 1;
-                    }
+                    stats.count_entities(text_entities);
                 }
                 Message::Service { text_entities, .. } => {
                     stats.service_messages += 1;
-
-                    for entity in text_entities {
-                        *stats
-                            .text_entity_types
-                            .entry(entity.entity_type.clone())
-                            .or_insert(0) += 1;
-                    }
+                    stats.count_entities(text_entities);
                 }
             }
         }
 
         stats
+    }
+
+    fn count_entities(&mut self, entities: &[crate::TextEntity]) {
+        for entity in entities {
+            *self
+                .text_entity_types
+                .entry(entity.entity_type.clone())
+                .or_default() += 1;
+        }
     }
 }
 
@@ -150,10 +148,10 @@ impl fmt::Display for ChatStats {
                 self.text_entity_types.len()
             )?;
             let mut entities: Vec<_> = self.text_entity_types.iter().collect();
-            entities.sort_by(|a, b| b.1.cmp(a.1));
+            entities.sort_unstable_by_key(|(_, count)| std::cmp::Reverse(*count));
 
-            for (entity_type, count) in entities {
-                writeln!(f, "- {:15}: {:>4}", entity_type, count)?;
+            for (entity, &count) in entities {
+                writeln!(f, "- {entity:15}: {count:>4}")?;
             }
         }
 

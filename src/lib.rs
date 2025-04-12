@@ -75,12 +75,14 @@ pub enum Reaction {
     Emoji {
         count: i32,
         emoji: String,
+        #[serde(default)]
         recent: Vec<RecentReaction>,
     },
     #[serde(rename = "custom_emoji")]
     CustomEmoji {
         count: i32,
         document_id: String,
+        #[serde(default)]
         recent: Vec<RecentReaction>,
     },
 }
