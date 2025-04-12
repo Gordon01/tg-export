@@ -1,28 +1,72 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 
 use serde::Serialize;
 
-use crate::{Message, Text, TextElement};
+use crate::Message;
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TextStats {
+    pub count: u64,
+    pub total_chars: u64,
+    pub max_chars: u64,
+}
+
+impl TextStats {
+    fn push(&mut self, chars: u64) {
+        self.count += 1;
+        self.total_chars += chars;
+        self.max_chars = chars.max(self.max_chars);
+    }
+}
+
+impl std::iter::Sum for TextStats {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(TextStats::default(), |mut acc, item| {
+            acc.count += item.count;
+            acc.total_chars += item.total_chars;
+            acc.max_chars = acc.max_chars.max(item.max_chars);
+            acc
+        })
+    }
+}
+
+impl Display for TextStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.count > 0 {
+            write!(
+                f,
+                "- {} messages\n- Average: {} chars\n- Longest: {} chars",
+                self.count,
+                self.total_chars / self.count,
+                self.max_chars
+            )
+        } else {
+            write!(f, "- No messages")
+        }
+    }
+}
 
 #[derive(Debug, Default, Serialize)]
 pub struct ChatStats {
-    pub total: u64,
     pub messages: u64,
     pub service_messages: u64,
     pub edited: u64,
     pub reactions: u64,
-    pub participants: HashMap<String, u64>,
-    pub message_lengths: (u64, u64), // (total_chars, max)
+    pub participants: HashMap<String, TextStats>,
     pub text_entity_types: HashMap<String, u64>,
 }
 
 impl ChatStats {
+    const HEAD_SIZE: usize = 5;
+
     pub fn analyze(messages: &[Message]) -> Self {
         let mut stats = ChatStats::default();
-        let mut length_counts = Vec::new();
+        stats.messages = messages.len() as u64;
 
         for message in messages {
-            stats.total += 1;
             match message {
                 Message::Message {
                     from,
@@ -33,36 +77,21 @@ impl ChatStats {
                     text_entities,
                     ..
                 } => {
-                    stats.messages += 1;
+                    let len = text.to_string().chars().count() as u64;
+                    stats
+                        .participants
+                        .entry(from.clone())
+                        .or_default()
+                        .push(len);
 
-                    // Count participant messages
-                    *stats.participants.entry(from.clone()).or_insert(0) += 1;
-
-                    // Count message length
-                    let length = match text {
-                        Text::Plain(s) => s.chars().count(),
-                        Text::Structured(te) => te
-                            .iter()
-                            .map(|e| match e {
-                                TextElement::String(s) => s.chars().count(),
-                                TextElement::Entity(te) => te.text.chars().count(),
-                            })
-                            .sum(),
-                    } as u64;
-                    length_counts.push(length);
-                    stats.message_lengths.0 += length;
-
-                    // Count reactions
-                    if let Some(reactions) = reactions {
-                        stats.reactions += reactions.len() as u64;
+                    if let Some(r) = reactions {
+                        stats.reactions += r.len() as u64;
                     }
 
-                    // Count edited messages
                     if edited.is_some() || edited_unixtime.is_some() {
                         stats.edited += 1;
                     }
 
-                    // Count entity types
                     for entity in text_entities {
                         *stats
                             .text_entity_types
@@ -70,15 +99,9 @@ impl ChatStats {
                             .or_insert(0) += 1;
                     }
                 }
-                Message::Service {
-                    actor,
-                    text_entities,
-                    ..
-                } => {
+                Message::Service { text_entities, .. } => {
                     stats.service_messages += 1;
-                    *stats.participants.entry(actor.clone()).or_insert(0) += 1;
 
-                    // Count entity types for service messages
                     for entity in text_entities {
                         *stats
                             .text_entity_types
@@ -87,11 +110,6 @@ impl ChatStats {
                     }
                 }
             }
-        }
-
-        // Calculate min/max lengths
-        if !length_counts.is_empty() {
-            stats.message_lengths.1 = *length_counts.iter().max().unwrap_or(&0);
         }
 
         stats
@@ -100,31 +118,28 @@ impl ChatStats {
 
 impl fmt::Display for ChatStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "📊 Chat Statistics Summary")?;
-        writeln!(f, "=========================")?;
-        writeln!(f, "📝 Total messages: {}", self.total)?;
-        writeln!(f, "💬 Regular messages: {}", self.messages)?;
+        writeln!(f, "📊 Chat Statistics Summary\n=========================")?;
+        writeln!(f, "💬 Total messages: {}", self.messages)?;
         writeln!(f, "⚙️ Service messages: {}", self.service_messages)?;
         writeln!(f, "✏️ Edited messages: {}", self.edited)?;
         writeln!(f, "❤️ Total reactions: {}", self.reactions)?;
 
-        if self.messages > 0 {
-            let avg_length = self.message_lengths.0 / self.messages;
-            writeln!(f, "\n📏 Message Lengths:")?;
-            writeln!(f, "- Average: {} chars", avg_length)?;
-            writeln!(f, "- Longest: {} chars", self.message_lengths.1)?;
+        let combined = self.participants.values().cloned().sum::<TextStats>();
+        if combined.count > 0 {
+            writeln!(f, "\n📏 Regular:\n{}", combined)?;
         }
 
         if !self.participants.is_empty() {
-            writeln!(f, "\n👥 Participants ({}):", self.participants.len())?;
             let mut participants: Vec<_> = self.participants.iter().collect();
-            participants.sort_by(|a, b| b.1.cmp(a.1));
+            participants.sort_unstable_by_key(|(_, stats)| std::cmp::Reverse(stats.count));
 
-            for (i, (name, count)) in participants.iter().take(5).enumerate() {
-                writeln!(f, "{}. {}: {}", i + 1, name, count)?;
+            writeln!(f, "\n👥 Top Participants ({}):", participants.len())?;
+            for (i, (name, stats)) in participants.iter().take(Self::HEAD_SIZE).enumerate() {
+                let percent = 100.0 * (stats.total_chars as f64 / combined.total_chars as f64);
+                writeln!(f, "{}. {name} ({percent:.0}%)\n{stats}", i + 1)?;
             }
-            if participants.len() > 5 {
-                writeln!(f, "... and {} more", participants.len() - 5)?;
+            if participants.len() > Self::HEAD_SIZE {
+                writeln!(f, "... and {} more", participants.len() - Self::HEAD_SIZE)?;
             }
         }
 
