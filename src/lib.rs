@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Display, io};
 
 use serde::Deserialize;
 
-pub use stats::ChatStats;
+pub use stats::{ChatStats, StatsSettings};
 
 #[derive(Debug, Deserialize)]
 pub struct Chat {

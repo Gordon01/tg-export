@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use clap::Parser;
 
-use tg_export::{Chat, ChatStats};
+use tg_export::{Chat, ChatStats, StatsSettings};
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -11,6 +11,9 @@ struct Cli {
 
     #[arg(long, short, default_value = "text")]
     output: OutputFormat,
+
+    #[arg(long, short, default_value_t = 10)]
+    max_words: usize,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -21,7 +24,13 @@ enum OutputFormat {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut stats = ChatStats::default();
+    let mut stats = ChatStats {
+        settings: StatsSettings {
+            max_words: cli.max_words,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     for input in cli.input {
         let json_data = fs::read(input)?;
         let chat: Chat = serde_json::from_slice(&json_data)?;

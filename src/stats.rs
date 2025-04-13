@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::{self, Display},
+    fmt::{self},
 };
 
 use serde::Serialize;
@@ -8,44 +8,50 @@ use serde::Serialize;
 use crate::Message;
 
 #[derive(Clone, Debug, Default, Serialize)]
-pub struct TextStats {
+pub struct UserStats {
     pub count: u64,
     pub total_chars: u64,
     pub max_chars: u64,
+    /// Word statistics: (word, count)
+    #[serde(skip)]
+    pub words: HashMap<String, usize>,
 }
 
-impl TextStats {
-    fn push(&mut self, chars: u64) {
+impl UserStats {
+    pub fn add_message(&mut self, message: &str) {
+        let len = message.chars().count() as u64;
         self.count += 1;
-        self.total_chars += chars;
-        self.max_chars = chars.max(self.max_chars);
+        self.total_chars += len;
+        self.max_chars = len.max(self.max_chars);
+
+        for word in message.to_lowercase().split_whitespace() {
+            *self.words.entry(word.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    pub fn avg_chars(&self) -> u64 {
+        self.total_chars.checked_div(self.count).unwrap_or(0)
+    }
+
+    pub fn top_words(&self, max: usize) -> Vec<(&String, &usize)> {
+        let mut words: Vec<_> = self.words.iter().collect();
+        words.sort_unstable_by_key(|(_, count)| std::cmp::Reverse(*count));
+        words.truncate(max);
+        words
     }
 }
 
-impl std::iter::Sum for TextStats {
+impl std::iter::Sum for UserStats {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(TextStats::default(), |mut acc, item| {
+        iter.fold(UserStats::default(), |mut acc, item| {
             acc.count += item.count;
             acc.total_chars += item.total_chars;
             acc.max_chars = acc.max_chars.max(item.max_chars);
+            for (word, count) in item.words {
+                *acc.words.entry(word).or_insert(0) += count;
+            }
             acc
         })
-    }
-}
-
-impl Display for TextStats {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.count > 0 {
-            write!(
-                f,
-                "- {} messages\n- Average: {} chars\n- Longest: {} chars",
-                self.count,
-                self.total_chars / self.count,
-                self.max_chars
-            )
-        } else {
-            write!(f, "- No messages")
-        }
     }
 }
 
@@ -55,16 +61,24 @@ pub struct ChatStats {
     pub service_messages: u64,
     pub edited: u64,
     pub reactions: u64,
-    pub participants: HashMap<String, TextStats>,
+    pub participants: HashMap<String, UserStats>,
     pub text_entity_types: HashMap<String, u64>,
+    pub settings: StatsSettings,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct StatsSettings {
+    /// How many most frequent words to display.
+    pub max_words: usize,
+    /// Wheter to show most frequent text entity types.
+    pub show_entities: bool,
 }
 
 impl ChatStats {
     const HEAD_SIZE: usize = 5;
 
-    pub fn analyze(messages: &[Message]) -> Self {
-        let mut stats = ChatStats::default();
-        stats.messages = messages.len() as u64;
+    pub fn analyze(&mut self, messages: &[Message]) {
+        self.messages += messages.len() as u64;
 
         for message in messages {
             match message {
@@ -77,31 +91,27 @@ impl ChatStats {
                     text_entities,
                     ..
                 } => {
-                    let len = text.to_string().chars().count() as u64;
-                    stats
-                        .participants
+                    self.participants
                         .entry(from.clone())
                         .or_default()
-                        .push(len);
+                        .add_message(&text.to_string());
 
                     if let Some(r) = reactions {
-                        stats.reactions += r.len() as u64;
+                        self.reactions += r.len() as u64;
                     }
 
                     if edited.is_some() || edited_unixtime.is_some() {
-                        stats.edited += 1;
+                        self.edited += 1;
                     }
 
-                    stats.count_entities(text_entities);
+                    self.count_entities(text_entities);
                 }
                 Message::Service { text_entities, .. } => {
-                    stats.service_messages += 1;
-                    stats.count_entities(text_entities);
+                    self.service_messages += 1;
+                    self.count_entities(text_entities);
                 }
             }
         }
-
-        stats
     }
 
     fn count_entities(&mut self, entities: &[crate::TextEntity]) {
@@ -111,6 +121,30 @@ impl ChatStats {
                 .entry(entity.entity_type.clone())
                 .or_default() += 1;
         }
+    }
+
+    fn display_user_stats(&self, stats: &UserStats, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if stats.count == 0 {
+            return write!(f, "- No messages");
+        }
+
+        writeln!(
+            f,
+            "- Messages: {}\n- Avg. length: {} chars\n- Longest: {} chars",
+            stats.count,
+            stats.avg_chars(),
+            stats.max_chars
+        )?;
+
+        let top_words = stats.top_words(self.settings.max_words);
+        if !top_words.is_empty() {
+            write!(f, "- Top words: ")?;
+            for (word, count) in top_words {
+                write!(f, "{} ({}) ", word, count)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -122,9 +156,10 @@ impl fmt::Display for ChatStats {
         writeln!(f, "✏️ Edited messages: {}", self.edited)?;
         writeln!(f, "❤️ Total reactions: {}", self.reactions)?;
 
-        let combined = self.participants.values().cloned().sum::<TextStats>();
+        let combined = self.participants.values().cloned().sum::<UserStats>();
         if combined.count > 0 {
-            writeln!(f, "\n📏 Regular:\n{}", combined)?;
+            writeln!(f, "\n📏 Regular:")?;
+            self.display_user_stats(&combined, f)?;
         }
 
         if !self.participants.is_empty() {
@@ -134,14 +169,15 @@ impl fmt::Display for ChatStats {
             writeln!(f, "\n👥 Top Participants ({}):", participants.len())?;
             for (i, (name, stats)) in participants.iter().take(Self::HEAD_SIZE).enumerate() {
                 let percent = 100.0 * (stats.total_chars as f64 / combined.total_chars as f64);
-                writeln!(f, "{}. {name} ({percent:.0}%)\n{stats}", i + 1)?;
+                writeln!(f, "\n{}. {name} ({percent:.0}%)", i + 1)?;
+                self.display_user_stats(&stats, f)?;
             }
             if participants.len() > Self::HEAD_SIZE {
                 writeln!(f, "... and {} more", participants.len() - Self::HEAD_SIZE)?;
             }
         }
 
-        if !self.text_entity_types.is_empty() {
+        if !self.text_entity_types.is_empty() && self.settings.show_entities {
             writeln!(
                 f,
                 "\n🔤 Text Entity Types ({}):",
