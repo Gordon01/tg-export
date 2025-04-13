@@ -14,6 +14,9 @@ struct Cli {
 
     #[arg(long, short, default_value_t = 10)]
     max_words: usize,
+
+    #[arg(long, short, default_value_t = 5)]
+    participants: usize,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -27,6 +30,7 @@ fn main() -> anyhow::Result<()> {
     let mut stats = ChatStats {
         settings: StatsSettings {
             max_words: cli.max_words,
+            max_participants: cli.participants,
             ..Default::default()
         },
         ..Default::default()

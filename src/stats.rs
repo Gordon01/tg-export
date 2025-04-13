@@ -1,8 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self},
+    time::{Duration, SystemTime},
 };
 
+use chrono::{DateTime, Local};
 use serde::Serialize;
 
 use crate::{Message, Reaction};
@@ -12,6 +14,8 @@ pub struct UserStats {
     pub count: u64,
     pub total_chars: u64,
     pub max_chars: u64,
+    pub first_message: Option<SystemTime>,
+    pub last_message: Option<SystemTime>,
     /// Word statistics: (word, count)
     #[serde(skip)]
     pub words: HashMap<String, usize>,
@@ -20,11 +24,21 @@ pub struct UserStats {
 }
 
 impl UserStats {
-    pub fn add_message(&mut self, message: &str, filter: &HashSet<String>) -> &mut Self {
+    pub fn add_message(
+        &mut self,
+        message: &str,
+        filter: &HashSet<String>,
+        timestamp: Option<SystemTime>,
+    ) -> &mut Self {
         let len = message.chars().count() as u64;
         self.count += 1;
         self.total_chars += len;
         self.max_chars = len.max(self.max_chars);
+
+        if let Some(ts) = timestamp {
+            self.first_message = Some(self.first_message.map_or(ts, |old| old.min(ts)));
+            self.last_message = Some(self.last_message.map_or(ts, |old| old.max(ts)));
+        }
 
         for word in message
             .to_lowercase()
@@ -97,11 +111,11 @@ pub struct StatsSettings {
     pub max_words: usize,
     /// Wheter to show most frequent text entity types.
     pub show_entities: bool,
+    /// How many top participants to display.
+    pub max_participants: usize,
 }
 
 impl ChatStats {
-    const HEAD_SIZE: usize = 5;
-
     pub fn analyze(&mut self, messages: &[Message]) {
         self.messages += messages.len() as u64;
         let words: HashSet<_> = stop_words::get(stop_words::LANGUAGE::Russian)
@@ -116,13 +130,17 @@ impl ChatStats {
                     reactions,
                     edited,
                     edited_unixtime,
+                    date_unixtime,
                     text_entities,
                     ..
                 } => {
+                    let unix_time = date_unixtime.parse::<u64>();
+                    let timestamp =
+                        unix_time.map(|t| std::time::UNIX_EPOCH + Duration::from_secs(t));
                     self.participants
                         .entry(from.clone())
                         .or_default()
-                        .add_message(&text.to_string(), &words)
+                        .add_message(&text.to_string(), &words, timestamp.ok())
                         .add_reactions(reactions);
 
                     if edited.is_some() || edited_unixtime.is_some() {
@@ -156,6 +174,15 @@ impl ChatStats {
         writeln!(f, "- Messages       : {}", stats.count)?;
         writeln!(f, "- Avg. length    : {} chars", stats.avg_chars())?;
         writeln!(f, "- Longest message: {} chars", stats.max_chars)?;
+
+        if let Some(first) = stats.first_message {
+            let datetime: DateTime<Local> = first.into();
+            writeln!(f, "- First message  : {}", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
+        if let Some(last) = stats.last_message {
+            let datetime: DateTime<Local> = last.into();
+            writeln!(f, "- Last message   : {}", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
 
         let mut received: Vec<_> = stats.received_reactions.iter().collect();
         received.sort_unstable_by_key(|(_, count)| std::cmp::Reverse(*count));
@@ -196,17 +223,18 @@ impl fmt::Display for ChatStats {
         }
 
         if !self.participants.is_empty() {
+            let max = self.settings.max_participants;
             let mut participants: Vec<_> = self.participants.iter().collect();
             participants.sort_unstable_by_key(|(_, stats)| std::cmp::Reverse(stats.count));
 
             writeln!(f, "\n👥 Top Participants ({}):", participants.len())?;
-            for (i, (name, stats)) in participants.iter().take(Self::HEAD_SIZE).enumerate() {
+            for (i, (name, stats)) in participants.iter().take(max).enumerate() {
                 let percent = 100.0 * (stats.total_chars as f64 / combined.total_chars as f64);
                 writeln!(f, "\n{}. {name}  (Character share: {percent:.0}%)", i + 1)?;
                 self.display_user_stats(&stats, f)?;
             }
-            if participants.len() > Self::HEAD_SIZE {
-                writeln!(f, "... and {} more", participants.len() - Self::HEAD_SIZE)?;
+            if participants.len() > max {
+                writeln!(f, "... and {} more", participants.len() - max)?;
             }
         }
 
