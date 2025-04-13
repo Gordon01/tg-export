@@ -30,7 +30,8 @@ pub enum Message {
         text_entities: Vec<TextEntity>,
         edited: Option<String>,
         edited_unixtime: Option<String>,
-        reactions: Option<Vec<Reaction>>,
+        #[serde(default)]
+        reactions: Vec<Reaction>,
     },
     #[serde(rename = "service")]
     Service {
@@ -73,14 +74,14 @@ pub struct TextEntity {
 pub enum Reaction {
     #[serde(rename = "emoji")]
     Emoji {
-        count: i32,
+        count: usize,
         emoji: String,
         #[serde(default)]
         recent: Vec<RecentReaction>,
     },
     #[serde(rename = "custom_emoji")]
     CustomEmoji {
-        count: i32,
+        count: usize,
         document_id: String,
         #[serde(default)]
         recent: Vec<RecentReaction>,
@@ -135,26 +136,24 @@ impl Chat {
                 }
 
                 // Handle reactions
-                if let Some(reactions) = reactions {
-                    reactions.iter().try_for_each(|r| {
-                        let (icon, users): (String, String) = match r {
-                            Reaction::Emoji { emoji, recent, .. } => (
-                                emoji.clone(),
-                                recent.iter().map(|u| format!("@{}", u.from)).collect(),
-                            ),
-                            Reaction::CustomEmoji {
-                                document_id,
-                                recent,
-                                ..
-                            } => (
-                                format!("custom_emoji:{}", document_id),
-                                recent.iter().map(|u| format!("@{}", u.from)).collect(),
-                            ),
-                        };
+                reactions.iter().try_for_each(|r| {
+                    let (icon, users): (String, String) = match r {
+                        Reaction::Emoji { emoji, recent, .. } => (
+                            emoji.clone(),
+                            recent.iter().map(|u| format!("@{}", u.from)).collect(),
+                        ),
+                        Reaction::CustomEmoji {
+                            document_id,
+                            recent,
+                            ..
+                        } => (
+                            format!("custom_emoji:{}", document_id),
+                            recent.iter().map(|u| format!("@{}", u.from)).collect(),
+                        ),
+                    };
 
-                        writeln!(writer, "  ↳ [reaction: {} by {}]", icon, users)
-                    })?;
-                }
+                    writeln!(writer, "  ↳ [reaction: {} by {}]", icon, users)
+                })?;
             }
         }
 

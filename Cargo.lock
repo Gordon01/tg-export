@@ -191,6 +191,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stop-words"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c6a86be9f7fa4559b7339669e72026eb437f5e9c5a85c207fe1033079033a17"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -215,6 +224,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "stop-words",
  "thiserror",
 ]
 
