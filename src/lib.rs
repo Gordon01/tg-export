@@ -1,7 +1,9 @@
+mod messages;
 mod stats;
 
 use std::{collections::HashMap, fmt::Display, io};
 
+use messages::RawMessage;
 use serde::Deserialize;
 
 pub use stats::{ChatStats, StatsSettings};
@@ -12,40 +14,7 @@ pub struct Chat {
     #[serde(rename = "type")]
     pub chat_type: String,
     pub id: i64,
-    pub messages: Vec<Message>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type")]
-pub enum Message {
-    #[serde(rename = "message")]
-    Message {
-        id: u64,
-        date: String,
-        date_unixtime: String,
-        from: String,
-        from_id: String,
-        reply_to_message_id: Option<u64>,
-        text: Text,
-        text_entities: Vec<TextEntity>,
-        edited: Option<String>,
-        edited_unixtime: Option<String>,
-        #[serde(default)]
-        reactions: Vec<Reaction>,
-    },
-    #[serde(rename = "service")]
-    Service {
-        id: u64,
-        date: String,
-        date_unixtime: String,
-        actor: String,
-        actor_id: String,
-        action: String,
-        duration_seconds: Option<u32>,
-        discard_reason: Option<String>,
-        text: Text,
-        text_entities: Vec<TextEntity>,
-    },
+    pub messages: Vec<RawMessage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,7 +70,7 @@ impl Chat {
         let max = max.unwrap_or(self.messages.len());
 
         for msg in self.messages.iter().take(max) {
-            if let Message::Message {
+            if let RawMessage::Message {
                 id,
                 date,
                 from,

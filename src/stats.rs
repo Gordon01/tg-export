@@ -1,13 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use chrono::{DateTime, Local};
 use serde::Serialize;
 
-use crate::{Message, Reaction};
+use crate::{RawMessage, Reaction, messages::IndexedMessages};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct UserStats {
@@ -116,43 +116,34 @@ pub struct StatsSettings {
 }
 
 impl ChatStats {
-    pub fn analyze(&mut self, messages: &[Message]) {
+    pub fn analyze(&mut self, messages: Vec<RawMessage>) {
         self.messages += messages.len() as u64;
         let words: HashSet<_> = stop_words::get(stop_words::LANGUAGE::Russian)
             .into_iter()
             .collect();
 
+        let mut im = IndexedMessages::default();
+
         for message in messages {
-            match message {
-                Message::Message {
-                    from,
-                    text,
-                    reactions,
-                    edited,
-                    edited_unixtime,
-                    date_unixtime,
-                    text_entities,
-                    ..
-                } => {
-                    let unix_time = date_unixtime.parse::<u64>();
-                    let timestamp =
-                        unix_time.map(|t| std::time::UNIX_EPOCH + Duration::from_secs(t));
-                    self.participants
-                        .entry(from.clone())
-                        .or_default()
-                        .add_message(&text.to_string(), &words, timestamp.ok())
-                        .add_reactions(reactions);
-
-                    if edited.is_some() || edited_unixtime.is_some() {
-                        self.edited += 1;
-                    }
-
-                    self.count_entities(text_entities);
-                }
-                Message::Service { text_entities, .. } => {
+            match &message {
+                RawMessage::Service { text_entities, .. } => {
                     self.service_messages += 1;
                     self.count_entities(text_entities);
                 }
+                _ => {}
+            }
+
+            if let Some((id, msg)) = message.message() {
+                self.participants
+                    .entry(msg.from.clone())
+                    .or_default()
+                    .add_message(&msg.text, &words, msg.date)
+                    .add_reactions(&msg.reactions);
+                if msg.edited.is_some() {
+                    self.edited += 1;
+                }
+                self.count_entities(&msg.text_entities);
+                im.add_message(id, msg);
             }
         }
     }
@@ -177,11 +168,19 @@ impl ChatStats {
 
         if let Some(first) = stats.first_message {
             let datetime: DateTime<Local> = first.into();
-            writeln!(f, "- First message  : {}", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+            writeln!(
+                f,
+                "- First message  : {}",
+                datetime.format("%Y-%m-%d %H:%M:%S")
+            )?;
         }
         if let Some(last) = stats.last_message {
             let datetime: DateTime<Local> = last.into();
-            writeln!(f, "- Last message   : {}", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+            writeln!(
+                f,
+                "- Last message   : {}",
+                datetime.format("%Y-%m-%d %H:%M:%S")
+            )?;
         }
 
         let mut received: Vec<_> = stats.received_reactions.iter().collect();

@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     for input in cli.input {
         let json_data = fs::read(input)?;
         let chat: Chat = serde_json::from_slice(&json_data)?;
-        stats.analyze(&chat.messages);
+        stats.analyze(chat.messages);
     }
 
     println!(
