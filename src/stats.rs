@@ -103,6 +103,7 @@ pub struct ChatStats {
     pub participants: HashMap<String, UserStats>,
     pub text_entity_types: HashMap<String, u64>,
     pub settings: StatsSettings,
+    pub longest_chain: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -146,6 +147,8 @@ impl ChatStats {
                 im.add_message(id, msg);
             }
         }
+
+        self.longest_chain = format!("{:#?}", im.longest_chain());
     }
 
     fn count_entities(&mut self, entities: &[crate::TextEntity]) {
@@ -220,6 +223,8 @@ impl fmt::Display for ChatStats {
             writeln!(f, "\n📏 Combined Participant Stats:")?;
             self.display_user_stats(&combined, f)?;
         }
+
+        writeln!(f, "Longest chain: {}", self.longest_chain)?;
 
         if !self.participants.is_empty() {
             let max = self.settings.max_participants;
