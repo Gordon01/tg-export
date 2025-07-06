@@ -1,12 +1,16 @@
 mod messages;
 mod stats;
+mod storage;
 
 use std::{collections::HashMap, fmt::Display, io};
 
 use messages::RawMessage;
 use serde::Deserialize;
 
-pub use stats::{ChatStats, StatsSettings};
+pub use self::{
+    stats::{ChatStats, StatsSettings},
+    storage::Storage,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Chat {

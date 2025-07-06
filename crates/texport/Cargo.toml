@@ -8,8 +8,11 @@ rust-version.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
+directories-next = "2"
+fs-err = "3.1"
 indexmap = { version = "2.9.0", features = ["serde"] }
-serde.workspace = true
+log.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 stop-words = { version = "0.8", features = ["nltk"] }
 thiserror.workspace = true
