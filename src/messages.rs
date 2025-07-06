@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime};
+use std::{collections::HashMap, time::{Duration, SystemTime}};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -41,8 +41,11 @@ pub enum RawMessage {
 #[derive(Default)]
 pub(crate) struct IndexedMessages {
     messages: IndexMap<u64, Message>,
+    // store the length of the reply‐chain ending at each message ID
+    chain_lengths: HashMap<u64, usize>,
 }
 
+#[derive(Debug)]
 pub(crate) struct Message {
     pub date: Option<SystemTime>,
     pub from: String,
@@ -51,6 +54,35 @@ pub(crate) struct Message {
     pub reactions: Vec<Reaction>,
     pub edited: Option<SystemTime>,
     pub text_entities: Vec<TextEntity>,
+}
+
+impl IndexedMessages {
+    pub(crate) fn add_message(&mut self, id: u64, message: Message) {
+        self.messages.insert(id, message);
+
+         // 2) Compute this message’s chain length
+         let length = if let Some(parent_id) = self.messages[&id].reply_to_message_id {
+            // parent’s chain length + 1, or 1 if parent not seen
+            1 + self.chain_lengths.get(&parent_id).cloned().unwrap_or(1)
+        } else {
+            1
+        };
+        self.chain_lengths.insert(id, length);
+    }
+
+    pub(crate) fn longest_chain(&self) -> Vec<&Message> {
+        let mut chain = Vec::with_capacity(self.chain_lengths.len());
+        let mut current = self.chain_lengths.iter().max_by_key(|e| e.1).map(|e| *e.0);
+
+        while let Some(msg_id) = current {
+            let msg = self.messages.get(&msg_id).unwrap();
+            chain.push(msg);
+            current = self.messages[&msg_id].reply_to_message_id;
+        }
+        chain.reverse();
+
+        chain
+    }
 }
 
 impl RawMessage {
@@ -91,11 +123,5 @@ impl RawMessage {
         } else {
             None
         }
-    }
-}
-
-impl IndexedMessages {
-    pub(crate) fn add_message(&mut self, id: u64, message: Message) {
-        self.messages.insert(id, message);
     }
 }
