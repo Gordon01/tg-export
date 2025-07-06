@@ -84,7 +84,7 @@ pub struct ChatFile {
 }
 
 /// A basic description of a Telegram chat, as found in `result.json`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct ChatInfo {
     /// The display name of the chat
     pub name: String,
@@ -107,4 +107,32 @@ pub enum OpenError {
     /// The top‑level `Downloads/Telegram Desktop` directory could not be read.
     #[error("can't open Telegram output directory: {0}")]
     NoTelegram(io::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::{Storage, storage::ChatInfo};
+
+    #[test]
+    fn single() -> anyhow::Result<()> {
+        let td_single = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("td_single");
+
+        let storage = Storage::from_path(td_single)?;
+
+        assert_eq!(1, storage.chats.len());
+        let expected = ChatInfo {
+            name: "Name Surname".to_string(),
+            chat_type: "personal_chat".to_string(),
+            id: 1,
+        };
+        let chat = storage.chats.get(&1).expect("chat 1 missing");
+        assert_eq!(expected, chat.info);
+
+        Ok(())
+    }
 }
