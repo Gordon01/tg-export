@@ -2,12 +2,13 @@ use std::{fs, path::PathBuf};
 
 use clap::Parser;
 
-use texport::{Chat, ChatStats, StatsSettings};
+use texport::{Chat, ChatStats, StatsSettings, Storage};
 
 #[derive(Debug, Parser)]
 struct Cli {
+    /// A directory containing Telegram chat exports
     #[arg(long, short)]
-    input: Vec<PathBuf>,
+    input: Option<PathBuf>,
 
     #[arg(long, short, default_value = "text")]
     output: OutputFormat,
@@ -35,7 +36,7 @@ fn main() -> anyhow::Result<()> {
         },
         ..Default::default()
     };
-    for input in cli.input {
+    for input in Storage::new()?.chats.into_values().map(|v| v.path) {
         let json_data = fs::read(input)?;
         let chat: Chat = serde_json::from_slice(&json_data)?;
         stats.analyze(chat.messages);
