@@ -1,0 +1,22 @@
+{
+    "name": "Name Surname",
+    "type": "personal_chat",
+    "id": 1,
+    "messages": [
+        {
+            "id": 1,
+            "type": "message",
+            "date": "2024-01-11T13:38:17",
+            "date_unixtime": "1704969497",
+            "from": "Other Person",
+            "from_id": "user557891246",
+            "text": "hello",
+            "text_entities": [
+                {
+                    "type": "plain",
+                    "text": "hello"
+                }
+            ]
+        }
+    ]
+}

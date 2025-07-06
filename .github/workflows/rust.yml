@@ -17,6 +17,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo check --quiet
+      run: cargo check --quiet --workspace --all-targets
     - name: Run tests
-      run: cargo test --quiet
+      run: cargo test --quiet --workspace
