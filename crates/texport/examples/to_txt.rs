@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use clap::Parser;
 
-use tg_export::Chat;
+use texport::Chat;
 
 #[derive(Debug, Parser)]
 struct Cli {

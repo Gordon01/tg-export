@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::{Duration, SystemTime}};
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
 
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -60,8 +63,8 @@ impl IndexedMessages {
     pub(crate) fn add_message(&mut self, id: u64, message: Message) {
         self.messages.insert(id, message);
 
-         // 2) Compute this message’s chain length
-         let length = if let Some(parent_id) = self.messages[&id].reply_to_message_id {
+        // 2) Compute this message’s chain length
+        let length = if let Some(parent_id) = self.messages[&id].reply_to_message_id {
             // parent’s chain length + 1, or 1 if parent not seen
             1 + self.chain_lengths.get(&parent_id).cloned().unwrap_or(1)
         } else {

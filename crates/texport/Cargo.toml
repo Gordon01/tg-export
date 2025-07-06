@@ -1,0 +1,14 @@
+[package]
+name = "texport"
+version = "0.0.2"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+indexmap = { version = "2.9.0", features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+stop-words = { version = "0.8", features = ["nltk"] }
+thiserror.workspace = true
